@@ -12,18 +12,28 @@ POINTS_URL = "https://glados.cloud/api/user/points"
 EXCHANGE_URL = "https://glados.cloud/api/user/exchange"
 HEADERS = {"Cookie": COOKIE, "Content-Type": "application/json"}
 
-# PushPlus 推送函数
+# PushPlus 推送函数（优化稳定版）
 def push_message(content):
     try:
-        url = "http://www.pushplus.plus/send"
+        url = "https://www.pushplus.plus/send"
         data = {
             "token": PUSHPLUS_TOKEN,
             "title": "GLaDOS自动签到",
-            "content": content
+            "content": content,
+            "template": "txt"
         }
-        requests.post(url, json=data, timeout=10)
+        for _ in range(2):
+            response = requests.post(url, json=data, timeout=15)
+            if response.status_code == 200:
+                res_data = response.json()
+                if res_data.get("code") == 200:
+                    print("✅ PushPlus推送成功")
+                    return
+                else:
+                    print(f"⚠️ 推送返回错误：{res_data.get('msg')}")
+        print("❌ 推送重试失败")
     except Exception as e:
-        print(f"推送失败: {e}")
+        print(f"❌ 推送异常：{str(e)}")
 
 def main():
     msg = []
@@ -37,7 +47,6 @@ def main():
         if "Checkin! Got" in message:
             msg.append(f"✅ 签到成功 | 今日获得积分：{today_point}")
         elif "Checkin Repeats" in message or "Today's observation logged" in message:
-            # 精准匹配Glados的重复签到提示，包括你截图的英文提示
             msg.append(f"ℹ️ 今日已签到，无需重复操作")
         else:
             msg.append(f"❌ 签到失败：{message}")
@@ -47,15 +56,16 @@ def main():
         return
 
     # 2. 获取总积分
+    total = 0
     try:
         res = requests.get(POINTS_URL, headers=HEADERS, timeout=10)
         total = int(res.json().get("points", 0))
         msg.append(f"💰 当前总积分：{total}")
     except Exception as e:
-        total = 0
         msg.append(f"💰 获取总积分失败：{str(e)}")
 
     # 3. 获取会员剩余天数
+    days = 0
     try:
         res = requests.get(STATUS_URL, headers=HEADERS, timeout=10)
         days = int(float(res.json().get("data", {}).get("leftDays", 0)))
@@ -78,8 +88,10 @@ def main():
 
     # 发送到手机
     content = "\n".join(msg)
-    push_message(content)
+    print("\n" + "="*50)
     print(content)
+    print("="*50 + "\n")
+    push_message(content)
 
 if __name__ == "__main__":
     main()
