@@ -1,9 +1,10 @@
 import requests
 import os
 
-# 从GitHub密钥自动读取（无需手动填写，安全）
-COOKIE = os.getenv("GLADOS_COOKIE")
-PUSHPLUS_TOKEN = os.getenv("PUSHPLUS_TOKEN")
+# 从GitHub密钥自动读取，并自动清洗Cookie（去除换行、空格）
+raw_cookie = os.getenv("GLADOS_COOKIE", "")
+COOKIE = raw_cookie.strip().replace("\n", "").replace("\r", "")
+PUSHPLUS_TOKEN = os.getenv("PUSHPLUS_TOKEN", "")
 
 # Glados 接口
 CHECKIN_URL = "https://glados.cloud/api/user/checkin"
@@ -55,11 +56,13 @@ def main():
         push_message("\n".join(msg))
         return
 
-    # 2. 获取总积分
+    # 2. 获取总积分（完美兼容浮点数/整数格式）
     total = 0
     try:
         res = requests.get(POINTS_URL, headers=HEADERS, timeout=10)
-        total = int(res.json().get("points", 0))
+        points_str = res.json().get("points", "0")
+        # 核心修复：先转float，再转int，完美处理带小数点的积分
+        total = int(float(points_str))
         msg.append(f"💰 当前总积分：{total}")
     except Exception as e:
         msg.append(f"💰 获取总积分失败：{str(e)}")
