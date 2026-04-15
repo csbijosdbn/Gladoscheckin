@@ -38,17 +38,21 @@ def push_message(content):
 
 def main():
     msg = []
+    today_checkin_points = 0  # 今日获取积分
+    
     # 1. 执行签到，精准区分重复签到和真失败
     try:
         res = requests.post(CHECKIN_URL, json={"token": "glados.cloud"}, headers=HEADERS, timeout=10)
         data = res.json()
-        today_point = data.get("points", 0)
+        today_checkin_points = data.get("points", 0)
         message = data.get("message", "")
 
         if "Checkin! Got" in message:
-            msg.append(f"✅ 签到成功 | 今日获得积分：{today_point}")
+            msg.append(f"✅ 签到成功")
+            msg.append(f"🎁 今日获取积分：{today_checkin_points}")  # 这里单独显示今日积分
         elif "Checkin Repeats" in message or "Today's observation logged" in message:
             msg.append(f"ℹ️ 今日已签到，无需重复操作")
+            msg.append(f"🎁 今日获取积分：0")
         else:
             msg.append(f"❌ 签到失败：{message}")
     except Exception as e:
@@ -61,7 +65,6 @@ def main():
     try:
         res = requests.get(POINTS_URL, headers=HEADERS, timeout=10)
         points_str = res.json().get("points", "0")
-        # 核心修复：先转float，再转int，完美处理带小数点的积分
         total = int(float(points_str))
         msg.append(f"💰 当前总积分：{total}")
     except Exception as e:
