@@ -1,118 +1,103 @@
-import json
-import os
-from datetime import datetime
-from pathlib import Path
-from zoneinfo import ZoneInfo
-
 import requests
+import os
 
-COOKIE = os.getenv("GLADOS_COOKIE", "").strip().replace("\n", "")
-PUSH_TOKEN = os.getenv("PUSHPLUS_TOKEN", "")
-STATE_FILE = Path(".glados-checkin-state.json")
+# 从GitHub密钥自动读取，并自动清洗Cookie（去除换行、空格）
+raw_cookie = os.getenv("GLADOS_COOKIE", "")
+COOKIE = raw_cookie.strip().replace("\n", "").replace("\r", "")
+PUSHPLUS_TOKEN = os.getenv("PUSHPLUS_TOKEN", "")
 
-BASE = "https://glados.cloud/api/user"
+# Glados 接口
+CHECKIN_URL = "https://glados.cloud/api/user/checkin"
+STATUS_URL = "https://glados.cloud/api/user/status"
+POINTS_URL = "https://glados.cloud/api/user/points"
+EXCHANGE_URL = "https://glados.cloud/api/user/exchange"
 HEADERS = {"Cookie": COOKIE, "Content-Type": "application/json"}
-today = datetime.now(ZoneInfo("Asia/Shanghai")).strftime("%Y-%m-%d")
 
-
-def get(url):
-    response = requests.get(url, headers=HEADERS, timeout=10)
-    response.raise_for_status()
-    return response.json()
-
-
-def push(content):
-    if PUSH_TOKEN:
-        requests.post(
-            "https://www.pushplus.plus/send",
-            json={
-                "token": PUSH_TOKEN,
-                "title": "GLaDOS自动签到",
-                "content": content,
-                "template": "txt",
-            },
-            timeout=15,
-        )
-
+# PushPlus 推送函数（优化稳定版）
+def push_message(content):
+    try:
+        url = "https://www.pushplus.plus/send"
+        data = {
+            "token": PUSHPLUS_TOKEN,
+            "title": "GLaDOS自动签到",
+            "content": content,
+            "template": "txt"
+        }
+        for _ in range(2):
+            response = requests.post(url, json=data, timeout=15)
+            if response.status_code == 200:
+                res_data = response.json()
+                if res_data.get("code") == 200:
+                    print("✅ PushPlus推送成功")
+                    return
+                else:
+                    print(f"⚠️ 推送返回错误：{res_data.get('msg')}")
+        print("❌ 推送重试失败")
+    except Exception as e:
+        print(f"❌ 推送异常：{str(e)}")
 
 def main():
-    state = {}
-    if STATE_FILE.exists():
-        try:
-            state = json.loads(STATE_FILE.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
-            pass
-
     msg = []
-
+    today_checkin_points = 0  # 今日获取积分
+    
+    # 1. 执行签到，精准区分重复签到和真失败
     try:
-        response = requests.post(
-            f"{BASE}/checkin",
-            json={"token": "glados.cloud"},
-            headers=HEADERS,
-            timeout=10,
-        )
-        data = response.json()
-        text = str(data.get("message", ""))
-        api_points = int(float(data.get("points", 0)))
+        res = requests.post(CHECKIN_URL, json={"token": "glados.cloud"}, headers=HEADERS, timeout=10)
+        data = res.json()
+        today_checkin_points = data.get("points", 0)
+        message = data.get("message", "")
 
-        is_new = "Checkin! Got" in text
-        is_repeat = "Checkin Repeats" in text or "Today's observation logged" in text
-
-        if is_new:
-            msg.append("✅ 签到成功")
-        elif is_repeat:
-            msg.append("ℹ️ 今日已签到，无需重复操作")
+        if "Checkin! Got" in message:
+            msg.append(f"✅ 签到成功")
+            msg.append(f"🎁 今日获取积分：{today_checkin_points}")  # 这里单独显示今日积分
+        elif "Checkin Repeats" in message or "Today's observation logged" in message:
+            msg.append(f"ℹ️ 今日已签到，无需重复操作")
+            msg.append(f"🎁 今日获取积分：0")
         else:
-            raise RuntimeError(text or "未知签到错误")
+            msg.append(f"❌ 签到失败：{message}")
+    except Exception as e:
+        msg.append(f"❌ 签到请求异常：{str(e)}")
+        push_message("\n".join(msg))
+        return
 
-        total = int(float(get(f"{BASE}/points").get("points", 0)))
-
-        # 同一天直接读取第一次保存的奖励；新的一天则和昨天总积分相减。
-        if state.get("date") == today:
-            earned = state["earned"]
-        elif is_new and api_points > 0:
-            earned = api_points
-        else:
-            earned = max(0, total - int(state.get("total", total)))
-
-        msg.append(f"🎁 今日获取积分：{earned}")
+    # 2. 获取总积分（完美兼容浮点数/整数格式）
+    total = 0
+    try:
+        res = requests.get(POINTS_URL, headers=HEADERS, timeout=10)
+        points_str = res.json().get("points", "0")
+        total = int(float(points_str))
         msg.append(f"💰 当前总积分：{total}")
+    except Exception as e:
+        msg.append(f"💰 获取总积分失败：{str(e)}")
 
-        days = int(float(get(f"{BASE}/status").get("data", {}).get("leftDays", 0)))
+    # 3. 获取会员剩余天数
+    days = 0
+    try:
+        res = requests.get(STATUS_URL, headers=HEADERS, timeout=10)
+        days = int(float(res.json().get("data", {}).get("leftDays", 0)))
         msg.append(f"📅 会员剩余可用：{days} 天")
+    except Exception as e:
+        msg.append(f"📅 获取剩余天数失败：{str(e)}")
 
-        if total >= 500:
-            exchange = requests.post(
-                f"{BASE}/exchange",
-                json={"planType": "plan500"},
-                headers=HEADERS,
-                timeout=10,
-            ).json()
-
-            if exchange.get("code") == 0:
+    # 4. 500积分自动兑换（仅这一个档位）
+    if total >= 500:
+        try:
+            res = requests.post(EXCHANGE_URL, json={"planType": "plan500"}, headers=HEADERS, timeout=10)
+            if res.json().get("code") == 0:
                 msg.append("🎁 500积分兑换100天成功！")
-                total = int(float(get(f"{BASE}/points").get("points", 0)))
             else:
-                msg.append(f"❌ 兑换失败：{exchange.get('message', '未知错误')}")
-        else:
-            msg.append(f"🎯 {total}/500 积分，暂不兑换")
+                msg.append(f"❌ 兑换失败：{res.json().get('message', '未知错误')}")
+        except Exception as e:
+            msg.append(f"❌ 兑换请求异常：{str(e)}")
+    else:
+        msg.append(f"🎯 {total}/500 积分，暂不兑换")
 
-        STATE_FILE.write_text(
-            json.dumps(
-                {"date": today, "earned": earned, "total": total},
-                ensure_ascii=False,
-            ),
-            encoding="utf-8",
-        )
-
-    except Exception as error:
-        msg.append(f"❌ 执行失败：{error}")
-
+    # 发送到手机
     content = "\n".join(msg)
+    print("\n" + "="*50)
     print(content)
-    push(content)
-
+    print("="*50 + "\n")
+    push_message(content)
 
 if __name__ == "__main__":
     main()
