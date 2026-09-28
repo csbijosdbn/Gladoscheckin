@@ -2,10 +2,9 @@ name: GLaDOS Auto Checkin
 
 on:
   schedule:
+    - cron: '0 15 * * *'
     - cron: '30 15 * * *'
     - cron: '0 16 * * *'
-    - cron: '30 16 * * *'
-    
   workflow_dispatch:
 
 jobs:
@@ -13,7 +12,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
-
 
     steps:
       - name: Checkout code
@@ -24,14 +22,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: 读取签到状态
-        uses: actions/cache/restore@v4
-        with:
-          path: .glados-checkin-state.json
-          key: glados-state-${{ steps.state.outputs.date }}
-          restore-keys: |
-            glados-state-
-            
       - name: Install requests
         run: pip install requests
 
@@ -40,10 +30,3 @@ jobs:
           GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
         run: python checkin.py
-
-      - name: 保存签到状态
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .glados-checkin-state.json
-          key: glados-state-${{ steps.state.outputs.date }}
