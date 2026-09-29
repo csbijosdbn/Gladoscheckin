@@ -11,7 +11,15 @@ CHECKIN_URL = "https://glados.cloud/api/user/checkin"
 STATUS_URL = "https://glados.cloud/api/user/status"
 POINTS_URL = "https://glados.cloud/api/user/points"
 EXCHANGE_URL = "https://glados.cloud/api/user/exchange"
-HEADERS = {"Cookie": COOKIE, "Content-Type": "application/json"}
+HEADERS = {
+    "Cookie": COOKIE,
+    "Content-Type": "application/json;charset=UTF-8",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    "Referer": "https://glados.cloud/console/checkin",
+    "Origin": "https://glados.cloud",
+    "Accept": "application/json, text/plain, */*",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
 
 # PushPlus 推送函数（优化稳定版）
 def push_message(content):
