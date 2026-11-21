@@ -1,82 +1,21 @@
-# Glados自动签到
+# GLaDOS 自动签到
 
-## 食用方式：
+本仓库的签到程序基于 [上游项目](https://github.com/Devilstore/Glados-Railgun-checkin) 的 8ca67db 版本，支持多域名探测、设备匹配及新版签到流程。原有的运行时间、PushPlus 推送和 500 积分自动兑换设置保留。
 
-### 注册一个GLaDOS的账号([注册地址](https://glados.space/landing/0A58E-NV28S-6U3QV-33VMG))
+## 配置 GitHub Actions
 
-#### 我的邀请码：([0A58E-NV28S-6U3QV-33VMG](https://0a58e-nv28s-6u3qv-33vmg.glados.space)) 
+在仓库 Settings → Secrets and variables → Actions 中设置：
 
-### **Fork**本仓库
+- `GLADOS_COOKIE`：原有单账号 Cookie，继续有效。从登录的签到页面的网络请求中复制完整 Cookie。
+- `GLADOS_COOKIES`：可选，推荐的多账号 JSON 数组；设置后优先于 `GLADOS_COOKIE`，例如：`[{"name":"账号1","origin":"glados.cloud","cookie":"koa:sess=...; koa:sess.sig=...; gld:sess=...","user-agent":"浏览器的完整 User-Agent"}]`。Cookie 不同域名通常不通用。
+- `PUSHPLUS_TOKEN`：可选，原有 PushPlus 通知令牌。也可使用 `PUSHDEER_SENDKEY` 或 `SERVERCHAN_SENDKEY`。
+- `GLADOS_EXCHANGE_PLAN`：可选，`plan100`、`plan200` 或 `plan500`。未设置时沿用原有 `plan500`，只有签到成功或重复签到且查询到足够积分时才兑换。设置为 `none` 可关闭自动兑换。
+- `GLADOS_VERBOSE`：可选，设为 `true` 输出详细日志。
 
-![图片加载失败](imgs/1.png)
+进入 Actions → GLaDOS Auto Checkin → Run workflow 可手动运行，定时任务每天北京时间 23:00、23:30、次日 00:00 执行。不要将 Cookie 或推送令牌提交到仓库或发给他人。
 
-### 添加**secret**
+## 排查无权限
 
-1. 跳转至自己的仓库的`Settings`->`Secrets and variables`->`Action`
+先确认使用的是登录时的域名，并在该域名重新登录，更新 Cookie；建议通过 JSON 的 `origin` 和 `user-agent` 字段填写 Cookie 来源域名及同一浏览器的 User-Agent。Cookie 过期、账号风控或 Cloudflare 验证仍可能导致拒绝，代码无法恢复失效的登录状态。日志中出现 Cloudflare、Turnstile 或 403/429/503 时，可参考 [浏览器扩展说明](extension/README.md) 在真实浏览器中完成验证。
 
-2. 添加1个`repository secret`，命名为`GLADOS_COOKIES`，其值对应GLaDOS账号的cookie值中的有效部分（获取方式如下）
-
-- 在GLaDOS的签到页面按`F12`
-
-- 切换到`Network`页面下，刷新
-
-![图片加载失败](imgs/2.png)
-
-- 点击第一个选项卡后在`Request Headers`下找到`Cookie`，右键复制cookie的值即可
-
-  > 参考格式：koa:sess=eyJ1c2xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxAwMH0=; koa:sess.sig=xJkOxxxxxxxxxxxxxxxtnM;
-
-![图片加载失败](imgs/3.png)
-
-- 多账号请在 `COOKIES` 中 添加多个 `cookies` 中间使用 `&`连接即可。（例如： `c1&c3&c3...`）
-
-3. 配置积分兑换策略（非必须）
-
-- 添加1个`repository secret`，命名为`GLADOS_EXCHANGE_PLAN`，配置自动兑换积分策略：
-
-| 值 | 积分要求 | 兑换天数 |
-|---|---------|---------|
-| `plan100` | 100 积分 | 10 天 |
-| `plan200` | 200 积分 | 30 天 |
-| `plan500` | 500 积分 | 100 天 (默认) |
-
-> 不配置时默认为 `plan500`，即积分达到 500 时自动兑换 100 天
-
-4. 手机推送（非必须）
-
-- 添加1个`repository secret`，命名为`PUSHDEER_SENDKEY`，其值对应 PushDeer key: ([获取地址](https://www.pushdeer.com/product.html))。
-
-### **star**自己的仓库
-
-![图片加载失败](imgs/4.png)
-
-## 文件结构
-
-```shell
-│  checkin.py	# 签到脚本
-│
-├─.github
-│  └─workflows
-│          gladosCheck.yml	# Actions 配置文件
-```
-
-## 更新日志
-
-- **2026-01**: 重构代码，添加log输出方便定位，支持新版网址，支持配置积分兑换策略。
-
-
-## 问题排查与定位
-- 大家可以通过查询 actions 中的 running checkin 日志快速定位问题，有其他问题提交issue。
-
-  <img width="1684" height="844" alt="image" src="https://github.com/user-attachments/assets/45348a5f-43e4-45f5-8fdf-ce84d343b30d" />
-
-## 声明
-
-本项目不保证稳定运行与更新, 因GitHub相关规定可能会删库, 请注意备份
-
-
-
-
-
-
-
+上游脚本对账号业务失败会记录日志和推送，但不一定使 Actions 变红，请检查签到总结。更多功能与配置详见 [上游说明](https://github.com/Devilstore/Glados-Railgun-checkin#readme)。
