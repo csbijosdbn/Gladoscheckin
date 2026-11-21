@@ -23,10 +23,15 @@ jobs:
           python-version: '3.11'
 
       - name: Install requests
-        run: pip install requests
+        run: pip install -r requirements.txt
 
       - name: Run checkin script
         env:
           GLADOS_COOKIE: ${{ secrets.GLADOS_COOKIE }}
+          GLADOS_COOKIES: ${{ secrets.GLADOS_COOKIES }}
+          GLADOS_EXCHANGE_PLAN: ${{ secrets.GLADOS_EXCHANGE_PLAN }}
+          GLADOS_VERBOSE: ${{ secrets.GLADOS_VERBOSE }}
           PUSHPLUS_TOKEN: ${{ secrets.PUSHPLUS_TOKEN }}
+          PUSHDEER_SENDKEY: ${{ secrets.PUSHDEER_SENDKEY }}
+          SERVERCHAN_SENDKEY: ${{ secrets.SERVERCHAN_SENDKEY }}
         run: python checkin.py
