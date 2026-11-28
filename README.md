@@ -30,7 +30,7 @@
 1. Fork 本仓库。
 2. 在自己的仓库进入 `Settings` → `Secrets and variables` → `Actions` → `New repository secret`，至少添加 `GLADOS_COOKIES`。
 3. 打开 `Actions` → `GLaDOS Check-in` → `Run workflow` 手动跑一次，看到「签到成功」或「重复签到」即完成。
-4. 之后每天 **09:18 / 12:18**（北京时间）自动运行。
+4. 之后每天 **00:00 / 00:30**（北京时间）自动运行。
 
 | Secret | 必填 | 说明 |
 | --- | :---: | --- |
@@ -180,11 +180,11 @@ GLaDOS 签到 · 成功 1 · 失败 1 · 重复 1
 
 ## ⏰修改运行时间
 
-默认每天 **09:18 / 12:18**（北京时间），由 `.github/workflows/gladosCheck.yml` 的 `schedule` 控制：
+默认每天 **00:00 / 00:30**（北京时间），由 `.github/workflows/gladosCheck.yml` 的 `schedule` 控制：
 
 ```yaml
 schedule:
-  - cron: '18 9,12 * * *'
+  - cron: '0,30 0 * * *'
     timezone: 'Asia/Shanghai'
 ```
 
