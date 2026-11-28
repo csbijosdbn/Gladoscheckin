@@ -35,8 +35,7 @@
 | Secret | 必填 | 说明 |
 | --- | :---: | --- |
 | `GLADOS_COOKIES` | **是** | 账号列表，固定 JSON 数组，见[账号配置](#配置-glados_cookies) |
-| `PUSHDEER_SENDKEY` | 否 | PushDeer 推送，见[消息推送](#消息推送) |
-| `SERVERCHAN_SENDKEY` | 否 | Server酱 推送，见[消息推送](#消息推送) |
+| `PUSHPLUS_TOKEN` | 否 | PushPlus 推送令牌，见[消息推送](#消息推送) |
 | `GLADOS_EXCHANGE_PLAN` | 否 | `plan100` / `plan200` / `plan500`，见[积分兑换](#积分兑换) |
 | `GLADOS_VERBOSE` | 否 | `true` / `1` / `yes` 输出详细日志 |
 
@@ -151,12 +150,16 @@ Chrome 不允许扩展写入自己的安装目录，所以首次更新需要你�
 
 ## 📣消息推送
 
-| 后端 | Secret | 获取密钥 |
-| --- | --- | --- |
-| PushDeer | `PUSHDEER_SENDKEY` | [pushdeer.com](https://www.pushdeer.com/product.html) 下载 App，在 App 内获取 pushkey |
-| Server酱 | `SERVERCHAN_SENDKEY` | [sct.ftqq.com](https://sct.ftqq.com/) 微信扫码登录，在页面获取 SendKey |
+签到脚本通过 [PushPlus](https://www.pushplus.plus/) 推送签到报告。
 
-两个可单独或同时配置（都发，任一成功即视为成功）；都不配则跳过推送，不影响签到。
+1. 登录 PushPlus，并按官网说明绑定接收消息的微信。
+2. 获取用户 token 或消息 token。
+3. 在仓库 `Settings` → `Secrets and variables` → `Actions` 中添加名为 `PUSHPLUS_TOKEN` 的 Secret，将 token 填入值。
+4. 打开 `Actions` → `GLaDOS Check-in` → `Run workflow` 验证通知。
+
+脚本使用 HTTPS POST 和 `txt` 模板发送完整报告，保留多账号结果与换行。未配置或留空则跳过推送，不影响签到；推送失败会记录日志，不改变签到退出码。原有的 `PUSHDEER_SENDKEY`、`SERVERCHAN_SENDKEY` 不再用于签到脚本，可从仓库 Secrets 中移除。不要将 token 写入代码或日志。
+
+PushPlus 返回 `code=200` 表示请求已受理，消息由服务端异步发送，不能据此保证已送达，详见 [PushPlus 接口文档](https://www.pushplus.plus/doc/guide/api.html)。本次变更适用于 Python 签到脚本及 GitHub Actions，浏览器扩展仍使用其自身的推送配置。
 
 ### 推送效果
 
@@ -287,7 +290,7 @@ GLaDOS 会校验 UA 与登录设备。填了 `user-agent` 就原样使用；没�
 <details>
 <summary><strong>Q：Actions 是绿色的，但没收到通知？</strong></summary>
 
-先确认对应 Secret 拼写正确（日志会打印「已配置 N 个后端」）。注意 Server酱 返回 `code=0` 只代表**任务已入队**，不代表已送达；长时间未收到请检查该 SendKey 是否已绑定微信。
+先确认 `PUSHPLUS_TOKEN` Secret 拼写正确且已填写（日志会打印「当前 PUSHPLUS_TOKEN 已设置」）。PushPlus 返回 `code=200` 只代表请求已受理；长时间未收到请在 PushPlus 检查发送记录、接收渠道、账号状态与额度。
 
 </details>
 
