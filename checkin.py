@@ -1104,8 +1104,7 @@ class API:
 class Config:
     """应用配置（来自环境变量）"""
 
-    ENV_PUSH_KEY = "PUSHDEER_SENDKEY"
-    ENV_SERVERCHAN_KEY = "SERVERCHAN_SENDKEY"
+    ENV_PUSHPLUS_TOKEN = "PUSHPLUS_TOKEN"
     ENV_COOKIES = "GLADOS_COOKIES"
     ENV_EXCHANGE_PLAN = "GLADOS_EXCHANGE_PLAN"
     ENV_VERBOSE = "GLADOS_VERBOSE"
@@ -1115,8 +1114,7 @@ class Config:
 
     def __init__(self, env: Optional[Dict[str, str]] = None):
         self.env = env if env is not None else os.environ
-        self.push_key = ""
-        self.serverchan_key = ""
+        self.pushplus_token = ""
         self.accounts = Accounts()
         self.exchange_plan = self.DEFAULT_EXCHANGE_PLAN
         self.verbose = self.DEFAULT_VERBOSE
@@ -1134,7 +1132,7 @@ class Config:
     # ---------------- 加载 ----------------
 
     def _load(self) -> None:
-        self._load_push_keys()
+        self._load_pushplus_token()
         # verbose 必须先加载：Accounts.parse 需要它来决定新建账号的 verbose 初值
         self._load_verbose()
         self._load_accounts()
@@ -1143,19 +1141,17 @@ class Config:
         logger.info(f"{LogEmoji.INFO} 共加载了 {len(self.accounts)} 个账号用于签到。")
         for account in self.accounts:
             logger.info(f"{LogEmoji.INFO} {LogEmoji.COOKIE}[{account.label}] {LogEmoji.DOMAIN}[{account.origin or '待探测'}] UA={'自定义' if account.user_agent else '默认'}")
-        logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_PUSH_KEY} {'已设置' if self.push_key else '未设置'}，" f"{self.ENV_SERVERCHAN_KEY} {'已设置' if self.serverchan_key else '未设置'}。")
+        logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_PUSHPLUS_TOKEN} {'已设置' if self.pushplus_token else '未设置'}。")
         logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_EXCHANGE_PLAN}: {self.exchange_plan}。")
         logger.info(f"{LogEmoji.INFO} 当前 {self.ENV_VERBOSE}: {self.verbose}。")
 
     def _get(self, key: str) -> str:
         return (self.env.get(key) or "").strip()
 
-    def _load_push_keys(self) -> None:
-        for key, env_name in (("push_key", self.ENV_PUSH_KEY), ("serverchan_key", self.ENV_SERVERCHAN_KEY)):
-            value = self._get(env_name)
-            setattr(self, key, value)
-            if not value:
-                logger.warning(f"{LogEmoji.WARNING} 环境变量 '{env_name}' 未设置。")
+    def _load_pushplus_token(self) -> None:
+        self.pushplus_token = self._get(self.ENV_PUSHPLUS_TOKEN)
+        if not self.pushplus_token:
+            logger.info(f"{LogEmoji.INFO} 未设置 {self.ENV_PUSHPLUS_TOKEN}，将跳过推送。")
 
     def _load_accounts(self) -> None:
         raw = self._get(self.ENV_COOKIES)
@@ -1224,7 +1220,7 @@ class Report:
         return f"GLaDOS 签到 · 成功 {success} · 失败 {failed} · 重复 {repeat}"
 
     def render(self, line_sep: str = "\n") -> str:
-        """渲染正文。line_sep：PushDeer 用 \\n；Server酱 用 '  \\n'（Markdown 硬换行）"""
+        """渲染正文，默认以换行符分隔账号结果。"""
         show_name = len(self.entries) > 1 and any(entry.name for entry in self.entries)
         lines = []
         for entry in self.entries:
@@ -1256,72 +1252,49 @@ class PushBackend:
         return report.render("\n")
 
 
-class PushDeerBackend(PushBackend):
-    """PushDeer 后端"""
+class PushPlusBackend(PushBackend):
+    """通过 PushPlus HTTPS 接口提交纯文本通知。"""
 
-    name = "PushDeer"
+    name = "PushPlus"
 
-    def __init__(self, push_key: str):
-        self.push_key = push_key
-
-    def send(self, report: Report) -> bool:
-        try:
-            from pypushdeer import PushDeer
-        except ImportError:
-            logger.error(f"{LogEmoji.ERROR} [{self.name}] 推送失败: 未安装 pypushdeer，请先执行 pip install pypushdeer。")
-            return False
-
-        try:
-            ok = PushDeer(pushkey=self.push_key).send_text(report.title, desp=self._render(report))
-            if not ok:
-                logger.error(f"{LogEmoji.ERROR} [{self.name}] 推送失败: 接口返回失败")
-            return bool(ok)
-        except Exception as e:  # noqa: BLE001 - 推送失败不应影响主流程
-            logger.error(f"{LogEmoji.ERROR} [{self.name}] 推送失败: {e}")
-            return False
-
-
-class ServerChanBackend(PushBackend):
-    """Server酱 后端"""
-
-    name = "Server酱"
-
-    def __init__(self, send_key: str):
-        self.send_key = send_key
-
-    def _render(self, report: Report) -> str:
-        # Server酱 按 Markdown 渲染，单 \n 不换行；行尾两空格 + \n 做硬换行，且不留段落间距
-        return report.render("  \n")
+    def __init__(self, token: str):
+        self.token = token
 
     def send(self, report: Report) -> bool:
         try:
-            from serverchan_sdk import sc_send
-        except ImportError:
-            logger.error(f"{LogEmoji.ERROR} [{self.name}] 推送失败: 未安装 serverchan_sdk，请先执行 pip install serverchan-sdk。")
+            response = requests.post(
+                "https://www.pushplus.plus/send",
+                json={
+                    "token": self.token,
+                    "title": report.title,
+                    "content": self._render(report),
+                    "template": "txt",
+                },
+                timeout=15,
+            )
+            response.raise_for_status()
+            result = response.json()
+        except (requests.RequestException, ValueError):
+            # 不输出请求/响应或异常正文，避免令牌和账号报告泄露到日志。
+            logger.error(f"{LogEmoji.ERROR} [{self.name}] 请求失败或响应无效，请检查网络和服务状态。")
             return False
 
-        try:
-            resp = sc_send(sendkey=self.send_key, title=report.title, desp=self._render(report))
-            if isinstance(resp, dict) and resp.get("code") == 0:
-                return True
-            logger.error(f"{LogEmoji.ERROR} [{self.name}] 推送失败: 接口返回 {resp}")
+        if not isinstance(result, dict) or result.get("code") != 200:
+            logger.error(f"{LogEmoji.ERROR} [{self.name}] 请求未被接受，请检查令牌、额度和 PushPlus 账号状态。")
             return False
-        except Exception as e:  # noqa: BLE001 - 推送失败不应影响主流程
-            logger.error(f"{LogEmoji.ERROR} [{self.name}] 推送失败: {e}")
-            return False
+        logger.info(f"{LogEmoji.SUCCESS} [{self.name}] 请求已受理，实际送达请以接收端为准。")
+        return True
 
 
 class PushService:
-    """聚合多个推送后端，向全部已配置的后端发送（都发）"""
+    """使用已配置的 PushPlus 令牌发送签到报告。"""
 
     def __init__(self, config: Optional[Config] = None):
         self.backends: List[PushBackend] = []
         if config is None:
             return
-        if config.push_key:
-            self.backends.append(PushDeerBackend(config.push_key))
-        if config.serverchan_key:
-            self.backends.append(ServerChanBackend(config.serverchan_key))
+        if config.pushplus_token:
+            self.backends.append(PushPlusBackend(config.pushplus_token))
 
     def send(self, report: Report) -> bool:
         """向所有已配置后端发送，任一成功即视为成功"""
@@ -1333,7 +1306,7 @@ class PushService:
         logger.info(f"{LogEmoji.INFO} 已配置 {len(self.backends)} 个后端（{names}），开始发送")
         results = [backend.send(report) for backend in self.backends]
         if any(results):
-            logger.info(f"{LogEmoji.SUCCESS} 发送完成：{sum(results)}/{len(results)} 个后端成功")
+            logger.info(f"{LogEmoji.SUCCESS} 请求已受理：{sum(results)}/{len(results)} 个后端")
             return True
         logger.error(f"{LogEmoji.ERROR} 全部后端发送失败")
         return False
